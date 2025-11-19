@@ -1,9 +1,20 @@
 const TIER_TEXTS = ["Bronze Bird", "Silver Swan", "Gold Goose", "Platin Penguin", "Diamond Duck", "Master Mallard"];
 const USER_DATA_CACHE = {};
+const PLAYER_CACHE = {};
+const HEATMAP_OPTS = {
+    blur:0,
+    minOpacity:0.5,
+    radius:10
+};
 const gameTemplate = document.querySelector("#game-template");
-
+const playerTemplate = document.querySelector("#player-template");
+const map  = L.map('pp-areas-map').setView([0,0],1);
+const tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://osm.org/copyright">OpenStreetMap</a> contributors',
+}).addTo(map);
+var densityLayer;
+var stats;
 USER_DATA_CACHE[userUid] = userData;
-
 function distance(lat1, lon1, lat2, lon2) {
     const r = 6371; // global avg
     const p = Math.PI / 180;
@@ -51,19 +62,60 @@ class Result {
         this.time = resultJson.time;
     }
 };
+
+class Player{
+    constructor(uid, id, nick){
+        this.uid = uid;
+        this.id = id;
+        this.nick = nick;
+        this._userData = null;
+        this._ppGames = null;
+    }
+    get userData() {
+            return this._userData || (this._userData = USER_DATA_CACHE[this.uid]);
+        }
+    elo(mmid){
+            return this.userData.seasonProgress.elo.filter(a => a.matchmakingId === mmid)[0].elo
+        }
+    get ppGames(){
+        return this._ppGames|| (this._ppGames=stats.ppGames.filter(g=>g.opponents[0].player==this));
+    }
+    get ppWinRate(){
+        return this.ppGames.filter(g=>g.players[userUid].won).length/this.ppGames.length;
+    }
+
+    get ppHtml() {
+         const node = playerTemplate.content.cloneNode(true);
+         $(node).find(".player-nick").text(this.nick);
+         $(node).find(".player-nick").attr("href", `https://geotastic.net/user-page/${this.uid}`);
+        $(node).find(".player-avatar").attr("src", getAvatarUrl(this.userData.avatarImage));
+        $(node).find(".player-rank").html(Rank.fromElo(this.elo(16)).html);
+        $(node).find(".player-winrate").text(`${(this.ppWinRate*100).toFixed(2)}%`);
+        $(node).find(".player-games-played").text(this.ppGames.length);
+        return node;
+    }
+
+    games(mmid){
+        return mmid==16?this.ppGames:this.flagsGames;
+    }
+    winRate(mmid){
+        return mmid==16?this.ppWinRate:this.flagsWinRate;
+    }
+    html(mmid){
+        return mmid==16?this.ppHtml:this.flagsHtml;
+    }
+}
 class Game {
-    static Player = class Player {
-        // the player class is local to each game to avoid confusion
-        constructor(uid, id, nick, won) {
-            this.uid = uid;
-            this.id = id;
-            this.nick = nick;
+    static PlayerResult = class PlayerResult {
+        // the playerresult class is local to each game to avoid confusion with the Player class
+         constructor(player, won) {
             this.results = {};
             this.totalScore = 0;
             this.roundsGuessed = 0;
             this.won = won;
-            this._userData = null;
             this.hgram = {};
+            this.guessLocations = [];
+            this.player = player;
             
         }
         processResult(result) {
@@ -75,16 +127,17 @@ class Game {
             this.totalScore += result.score;
             const bucket = Math.min(23, Math.floor(result.score/250)); // we don't want 6000-ers to be in a separate bucket
             this.hgram[bucket] = (this.hgram[bucket]||0)+1;
+            this.guessLocations.push([result.pick.lat, result.pick.lng]);
             this.roundsGuessed++;
         }
         get userData() {
-            return this._userData || (this._userData = USER_DATA_CACHE[this.uid]);
+            return this.player.userData;
         }
         get averageScore(){
             return this.totalScore/this.roundsGuessed;
         }
         elo(mmid){
-            return this.userData.seasonProgress.elo.filter(a => a.matchmakingId === mmid)[0].elo
+            return this.player.elo(mmid);
         }
     };
 
@@ -94,7 +147,8 @@ class Game {
         this.matchmakingId = apiResponse.matchmakingId;
         for (const result of apiResponse.results) {
             if (!(result.userUid in this.players)) {
-                this.players[result.userUid] = new Game.Player(result.userUid, result.userId, result.nickname, result.userId==apiResponse.winnerUserId);
+                const p = PLAYER_CACHE[result.userUid] = (PLAYER_CACHE[result.userUid] || new Player(result.userUid, result.userId, result.nickname));
+                this.players[result.userUid] = new Game.PlayerResult(p, result.userId==apiResponse.winnerUserId);
             }
             this.players[result.userUid].processResult(result);
         }
@@ -106,8 +160,8 @@ class Game {
         const node = gameTemplate.content.cloneNode(true); 
         $(node).find(".game").addClass(this.players[userUid].won?"won":"lost");
         $(node).find(".game-status").attr("data-icon", this.players[userUid].won?"mdi-check":"mdi-close");
-        $(node).find(".game-opponent").text(this.opponents[0].nick);
-        $(node).find(".game-opponent").attr("href",`https://geotastic.net/user-page/${this.opponents[0].uid}`);
+        $(node).find(".game-opponent").text(this.opponents[0].player.nick);
+        $(node).find(".game-opponent").attr("href",`https://geotastic.net/user-page/${this.opponents[0].player.uid}`);
         $(node).find(".game-opponent-rank").html(Rank.fromElo(this.opponents[0].elo(this.matchmakingId)).html);
         $(node).find(".game-score").text(this.players[userUid].averageScore.toFixed(2));
         $(node).find(".game-view").attr("href", `https://geotastic.net/game-history-details/${this.lobbyId}`);
@@ -138,6 +192,27 @@ class Stats {
     }
     worstLosses(mmid){
         return (mmid==15?this.flagsGames:this.ppGames).filter(g=>(!g.players[userUid].won)).sort((a,b)=>(a.opponents[0].elo(mmid)-b.opponents[0].elo(mmid)));
+    }
+    bestOpponents(mmid){
+        function score(p,s){
+            return p.winRate(mmid)*(s.ppGames.length+s.flagsGames.length)+
+            p.games(mmid).length//tiebreaker
+        }
+        return Object.values(PLAYER_CACHE).
+            filter(p=>!!p.games(mmid).length). // has any games played
+            sort((a,b)=>score(b,this)-score(a,this));
+    }
+    worstOpponents(mmid){
+        function score(p,s){
+            return p.winRate(mmid)*(s.ppGames.length+s.flagsGames.length)-
+            p.games(mmid).length//tiebreaker (reverse because we want SMALLER scores first)
+        }
+        return Object.values(PLAYER_CACHE).
+            filter(p=>!!p.games(mmid).length). // has any games played
+            sort((a,b)=>score(a,this)-score(b,this));
+    }
+    mostPlayedOpponents(mmid){
+        return Object.values(PLAYER_CACHE).filter(p=>!!p.games(mmid).length).sort((a,b)=>b.games(mmid).length-a.games(mmid).length);
     }
     async processGame(game) {
         let gameObj = await Game.fromLobbyId(game.lobbyId);
@@ -188,7 +263,18 @@ class Stats {
         for(const g of this.worstLosses(16).slice(0,3)){
             $("#pp-games-worst-losses").append(g.html);
         }
+        for(const p of this.bestOpponents(16).slice(0,3)){
+            $("#pp-opponents-best").append(p.html(16));
+        }
+        for(const p of this.worstOpponents(16).slice(0,3)){
+            $("#pp-opponents-worst").append(p.html(16));
+        }
+        for(const p of this.mostPlayedOpponents(16).slice(0,3)){
+            $("#pp-opponents-most-played").append(p.html(16));
+        }
+
         Plotly.newPlot('pp-dist-histogram', [{x:[...Array(24).keys().map(k=>k*250)], y:this.ppHistogram, type:"bar"}]);
+        densityLayer=L.heatLayer(this.guessLocations, HEATMAP_OPTS).addTo(map);
 
     }
     async showFlags() {
@@ -200,6 +286,9 @@ class Stats {
     get ppHistogram(){
         const hgram = this.ppGames.map(g=>g.players[userUid].hgram).reduce(sumHgrams);
         return [...Array(24).keys().map(bucket=>hgram[bucket]||0)];
+    }
+    get guessLocations(){
+        return this.ppGames.map(g=>g.players[userUid].guessLocations).flat();
     }
 };
 async function getAllMatchmakingGames(uid) {
@@ -214,7 +303,7 @@ async function getAllMatchmakingGames(uid) {
     return games.concat(futureGames);
 }
 async function processGames(games) {
-    var stats = new Stats();
+    stats = new Stats();
     const futures = games.map(game => async function() {
         await stats.processGame(game);
         $("#loading-progress").val($("#loading-progress").val() + 1);

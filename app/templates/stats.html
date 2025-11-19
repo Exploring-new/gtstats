@@ -1,15 +1,35 @@
 {%extends 'base.html'%}
 {%block title%}{{public_user_data["nickname"]}}'s stats{%endblock%}
+{%block head%}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="/static/js/leaflet.heat.js"></script>
+{%endblock%}
 {%block content%}
 <template id="game-template">
     <div class="game">
-        <div class="column"><div class="row"><span class="game-status iconify"></span> vs <div class="player"><img class="game-opponent-avatar avatar-image-small"><a class="game-opponent"></a><span>(<span class="game-opponent-rank"></span>)</span></div></div>
-        <div><span class="iconify" data-icon="mdi-diameter-variant"></span><span class="game-score"></span></div>
+        <div class="column">
+            <div class="row"><span class="game-status iconify"></span> vs <div class="player"><img class="game-opponent-avatar avatar-image-small"><a class="game-opponent"></a><span>(<span class="game-opponent-rank"></span>)</span></div>
+            </div>
+            <div><span class="iconify" data-icon="mdi-diameter-variant"></span><span class="game-score"></span></div>
         </div>
         <a href="#" target="_blank" class="button game-view">View</a>
     </div>
 </template>
-<div class="stats-title"><img src="{{"https://static.geo.edutastic.de/avatars/"+public_user_data["avatarImage"] if public_user_data["avatarImage"] else "https://static.geo.edutastic.de/avatar/default.png"}}" class="avatar-image"><h1 class="title">{{public_user_data["nickname"]}}</h1></div>
+<template id="player-template">
+    <div class="player-outer">
+        <div class="row right">
+            <div class="column">
+                <div class="player"><img class="player-avatar avatar-image-small"><a class="player-nick"></a></div><div><span class="player-rank"></span></div></div>
+            <div class="column right"><span class="player-winrate"></span>
+                <div class="row"><span class="player-games-played"></span> games</div>
+            </div>
+        </div>
+    </div>
+</template>
+<div class="stats-title"><img src="{{"https://static.geo.edutastic.de/avatars/"+public_user_data["avatarImage"] if public_user_data["avatarImage"] else "https://static.geo.edutastic.de/avatar/default.png"}}" class="avatar-image">
+    <h1 class="title">{{public_user_data["nickname"]}}</h1>
+</div>
 <div id="stats" class="tabs">
     <div class="tablist">
         <button data-tab="tab-pp" class="tab-button">Pinpointing</button>
@@ -47,16 +67,18 @@
                     <h3 class="card-title">Opponents</h3>
                 </div>
                 <div class="card-body">
-                    <div class="stat">
+                    <div class="stat column">
                         <span class="stat-name">Best opponents (win rate)</span>
-                        <div class="stat-value-multi" id="pp-opponents-best"></div>
+                        <div class="stat-value-multi row wrap" id="pp-opponents-best"></div>
                     </div>
-                    <div class="stat">
+                    <div class="stat column">
                         <span class="stat-name">Worst opponents (win rate)</span>
-                        <div class="stat-value-multi" id="pp-opponents-best"></div>
+                        <div class="stat-value-multi row wrap" id="pp-opponents-worst"></div>
                     </div>
-
-
+                    <div class="stat column">
+                        <span class="stat-name">Most played opponents</span>
+                        <div class="stat-value-multi row wrap" id="pp-opponents-most-played"></div>
+                    </div>
                 </div>
             </div>
             <div class="card col-8" id="pp-games">
@@ -84,7 +106,7 @@
                 </div>
             </div>
 
-             <div class="card col-4" id="pp-guesses">
+            <div class="card col-4" id="pp-guesses">
                 <div class="card-header">
                     <h3 class="card-title">Guesses</h3>
                 </div>
@@ -92,7 +114,7 @@
                     best guesses, worst guesses
                 </div>
             </div>
-             
+
 
             <div class="card col-6" id="pp-dist">
                 <div class="card-header">
@@ -103,7 +125,7 @@
                     </div>
                 </div>
             </div>
-                       
+
             <div class="card col-6" id="pp-countries">
                 <div class="card-header">
                     <h3 class="card-title">Countries</h3>
@@ -117,10 +139,11 @@
                     <h3 class="card-title">Areas</h3>
                 </div>
                 <div class="card-body">
-                  guess density map (interactive?)
+                    <div id="pp-areas-map">
+                    </div>
                 </div>
             </div>
-            
+
 
         </div>
     </div>
@@ -129,13 +152,14 @@
     </div>
 </div>
 <div id="loading">
-<img class="loading-image" src="/static/loading.webp" width="100">
-<div id="loading-data"><span id="loading-flavor">Loading...</span><progress id="loading-progress" max="100" value="0"></progress></div>
+    <img class="loading-image" src="/static/loading.webp" width="100">
+    <div id="loading-data"><span id="loading-flavor">Loading...</span><progress id="loading-progress" max="100" value="0"></progress></div>
 </div>
 {%endblock%}
 {%block scripts%}
 <script>
-    const userUid = "{{uid}}";const userData = {{public_user_data|tojson}};
+    const userUid = "{{uid}}";
+    const userData = {{public_user_data | tojson}};
 </script>
 <script src="/static/js/proxy.js"></script>
 <script src="/static/js/tabs.js"></script>
