@@ -14,7 +14,9 @@ const HEATMAP_OPTS = {
 const gameTemplate = document.querySelector("#game-template");
 const playerTemplate = document.querySelector("#player-template");
 const guessTemplate = document.querySelector("#guess-template");
-const map  = L.map('pp-areas-map').setView([0,0],1);
+const countryCorrectTemplate = document.querySelector("#country-correct-template");
+const countryScoreTemplate = document.querySelector("#country-score-template");
+const map  = L.map('pp-areas-map').fitWorld();;
 const tileLayer = getTileLayer().addTo(map);
 var densityLayer;
 var stats;
@@ -64,6 +66,61 @@ class Rank {
         return `<span class="rank ${this.tierClass}"><span class="rank-name">${this.tierText}</span><span class="rank-stars">${this.starsText}</span></span>`
     }
 };
+class CountryStats{
+    constructor(iso2){
+        this.iso2=iso2;
+        this.guessedRight=0;
+        this.guessedTotal=0;
+        this.totalScore=0;
+        this.totalTime=0;
+        this.mistakes={};
+    }
+    process(result){
+        if(result.pick.lat==0&&result.pick.lng==0){
+            return;
+        }
+        this.guessedTotal++;
+        if(result.gotCountry){
+            this.guessedRight++;
+        }
+        else{
+            this.mistakes[result.pick.iso2]=(this.mistakes[result.pick.iso2]||0)+1;
+        }
+        this.totalScore+=result.score;
+        this.totalTime+=result.time;
+    }
+
+    get averageScore(){
+        return this.totalScore/this.guessedTotal;
+    }
+    get correctRate(){
+        return this.guessedRight/this.guessedTotal;
+    }
+    get averageTime(){
+        return this.totalTime/this.guessedTotal;
+    }
+    get correctHtml(){
+        const node = countryCorrectTemplate.content.cloneNode(true);
+        $(node).find(".country-correct-name").text(COUNTRIES[this.iso2.toUpperCase()]||this.iso2);
+        $(node).find(".country-correct-img").attr("src",`/static/flags/svg/${this.iso2}.svg`);
+        $(node).find(".country-correct-percent").text(`${(this.correctRate*100).toFixed(2)}`);
+        const sortedMistakes = Object.keys(this.mistakes).sort((a,b)=>this.mistakes[b]-this.mistakes[a]);
+        for (const m of sortedMistakes){
+            let flagSrc=`/static/flags/svg/${m||'??'}.svg`;
+            //let countryName = COUNTRIES[m.toUpperCase()]||m;
+            $(node).find(".country-correct-mistakes").append(`<div class="mistake row"><img class="small-flag" src="${flagSrc}">${m||'??'}(${this.mistakes[m]}x)</div>`)
+        }
+        return node;
+    }
+    get scoreHtml(){
+        const node = countryScoreTemplate.content.cloneNode(true);
+        $(node).find(".country-score-name").text(COUNTRIES[this.iso2.toUpperCase()]||this.iso2);
+        $(node).find(".country-score-img").attr("src",`/static/flags/svg/${this.iso2}.svg`);
+        $(node).find(".country-score-score").text(this.averageScore.toFixed(2));
+        return node;
+    }
+};
+
 class Result {
     constructor(resultJson) {
         this.drop = resultJson.drop;
@@ -153,10 +210,11 @@ class Game {
         }
         processResult(result) {
             this.results[result.round] = new Result(result);
-            if (!result.pick.iso2) {
+            if (result.pick.lat==0&&result.pick.lng==0) {
                 //don't count forgetting to guess as an actual guess
                 return;
             }
+            
             this.totalScore += result.score;
             this.totalTime += result.time;
             const bucket = Math.min(23, Math.floor(result.score/250)); // we don't want 6000-ers to be in a separate bucket
@@ -212,6 +270,8 @@ class Game {
 };
 class Stats {
     constructor() {
+        this.ppCountryStats = {};
+        this.flagsCountryStats = {};
         this.ppGames = [];
         this.flagsGames = [];
         this.ppWon = 0;
@@ -242,6 +302,16 @@ class Stats {
             filter(p=>!!p.games(mmid).length). // has any games played
             sort((a,b)=>score(b,this)-score(a,this));
     }
+    worstCountriesCorrect(mmid){
+        return Object.values(mmid==15?this.flagsCountryStats:this.ppCountryStats).filter(c=>!!c.guessedTotal).sort((a,b)=>a.correctRate-b.correctRate);
+    }
+    worstCountriesScore(mmid){
+        return Object.values(mmid==15?this.flagsCountryStats:this.ppCountryStats).filter(c=>!!c.guessedTotal).sort((a,b)=>a.averageScore-b.averageScore);
+    }
+    worstCountriesTime(mmid){
+        return Object.values(mmid==15?this.flagsCountryStats:this.ppCountryStats).filter(c=>!!c.guessedTotal).sort((a,b)=>b.averageTime-a.averageTime);
+    }
+
     worstOpponents(mmid){
         function score(p,s){
             return p.winRate(mmid)*(s.ppGames.length+s.flagsGames.length)-
@@ -263,19 +333,32 @@ class Stats {
     }
     async processGame(game) {
         let gameObj = await Game.fromLobbyId(game.lobbyId);
+        var countryStats;
         if (game.matchmakingId == 16) {
 
             this.ppGames.push(gameObj);
             if (game.placement == 1) {
                 this.ppWon++;
             }
+            countryStats = this.ppCountryStats;
+
         } else if (game.matchmakingId == 15) {
             this.flagsGames.push(gameObj);
             if (game.placement == 1) {
                 this.flagsWon++;
             }
+            countryStats = this.flagsCountryStats;
         }
-        console.log(game);
+        else{
+            return;
+        }
+        for (const result of Object.values(gameObj.players[userUid].results)){
+            if(!result.drop.iso2) continue;
+            if(result.drop.iso2 && !countryStats[result.drop.iso2]){
+                countryStats[result.drop.iso2] = new CountryStats(result.drop.iso2);
+            }
+            countryStats[result.drop.iso2].process(result);
+        }
     }
     async getPlayerData() {
         // this is called separately to make it possible to get user data asynchronously and without repeating any uids
@@ -302,8 +385,6 @@ class Stats {
         for(const g of b.slice(b.length-3).reverse()){
             $("#pp-games-worst-games").append(g.html);
         }
-        console.log(this.bestWins(16));
-        console.log(this.worstLosses(16));
         for(const g of this.bestWins(16).slice(0,3)){
             $("#pp-games-best-wins").append(g.html);
         }
@@ -328,24 +409,35 @@ class Stats {
         }
         for (const g of bestPpGuesses.slice(bestPpGuesses.length-3).reverse()){
             let node = g.html;
-            console.log(node);
             $("#pp-guesses-worst").append(node);
 
             g.addMap($("#pp-guesses-worst .guess").last());
             //setTimeout(()=>{g.addMap(node)}, 10);
         }
-        Plotly.newPlot('pp-dist-histogram', [{x:[...Array(24).keys().map(k=>k*250)], y:this.ppHistogram, type:"bar"}]);
+        for (const c of this.worstCountriesCorrect(16)){
+            $("#pp-countries-correct").append(c.correctHtml);
+        }
+        for (const c of this.worstCountriesScore(16)){
+            $("#pp-countries-score").append(c.scoreHtml);
+        }
+        const hg = $("#pp-dist-histogram")[0];
+        Plotly.newPlot('pp-dist-histogram', [{x:[...Array(24).keys().map(k=>k*250)], y:this.ppHistogram, type:"bar"}], {responsive: true});
+        const ro = new ResizeObserver(() => {
+          Plotly.Plots.resize(hg);
+        });
+
+        ro.observe(hg);
         densityLayer=L.heatLayer(this.guessLocations, HEATMAP_OPTS).addTo(map);
 
     }
     async showFlags() {
-
+        $("#tab-flags").text("coming soon! (maybe)");
     }
     async show() {
         await Promise.all([this.showPp(), this.showFlags()]);
     }
     get ppHistogram(){
-        const hgram = this.ppGames.map(g=>g.players[userUid].hgram).reduce(sumHgrams);
+        const hgram = this.ppGames.map(g=>g.players[userUid].hgram).reduce(sumHgrams, {});
         return [...Array(24).keys().map(bucket=>hgram[bucket]||0)];
     }
     get guessLocations(){
@@ -369,11 +461,8 @@ async function processGames(games) {
         await stats.processGame(game);
         $("#loading-progress").val($("#loading-progress").val() + 1);
     }());
-    console.log(futures);
     await Promise.all(futures);
     await stats.getPlayerData();
-    console.log(stats);
-    console.log(stats.ppGames[0].opponents[0].elo(16));
     return stats;
 }
 function *deduplicateLobbies(games){

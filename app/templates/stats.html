@@ -38,12 +38,38 @@
         </div>    
     </div>
 </template>
+<template id="country-correct-template">
+    <tr class="country-correct table-row">
+        <td>
+            <div class="row">
+                <img class="country-correct-img small-flag">
+                <span class="country-correct-name">
+                </span>
+            </div>
+        </td>
+        <td class="country-correct-percent"></td><td>
+            <div class="row country-correct-mistakes wrap">
+            </div>
+        </td>
+</template>
+<template id="country-score-template">
+    <tr class="country-score table-row">
+        <td>
+            <div class="row">
+                <img class="country-score-img small-flag">
+                <span class="country-score-name">
+                </span>
+            </div>
+        </td>
+        <td><strong class="country-score-score"></strong></td>
+    </tr>
+</template>
 <div class="stats-title"><img src="{{"https://static.geo.edutastic.de/avatars/"+public_user_data["avatarImage"] if public_user_data["avatarImage"] else "https://static.geo.edutastic.de/avatar/default.png"}}" class="avatar-image">
     <h1 class="title">{{public_user_data["nickname"]}}</h1>
 </div>
 <div id="stats" class="tabs">
     <div class="tablist">
-        <button data-tab="tab-pp" class="tab-button">Pinpointing</button>
+        <button data-tab="tab-pp" class="tab-button active">Pinpointing</button>
         <button data-tab="tab-flags" class="tab-button">Flags</button>
     </div>
     <div class="tab active" id="tab-pp" data-tab="tab-pp">
@@ -149,13 +175,43 @@
                 <div class="card-header">
                     <h3 class="card-title">Countries</h3>
                 </div>
-                <div class="card-body">
-                    list of countries by accuracy
+
+                <div class="tabs">
+                    <div class="tablist">
+                        <button class="tab-button active" data-tab="tab-correct">Correct</button>
+                        <button class="tab-button" data-tab="tab-score">Score</button>
+                    </div>
+                    <div class="tab active country-table-wrapper" data-tab="tab-correct">
+                        <table class="country-table" cellspacing="0" cellpadding="2">
+                            <thead>
+                                <tr>
+                                    <th>Country</th>
+                                    <th>Correct %</th>
+                                    <th>Mistakes</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pp-countries-correct">
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="tab country-table-wrapper" data-tab="tab-score">
+                        <table class="country-table" cellspacing="0" cellpadding="2">
+                            <thead>
+                                <tr>
+                                    <th>Country</th>
+                                    <th>Average Score</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pp-countries-score">
+                            </tbody>
+                        </table>
+
+                    </div>
                 </div>
             </div>
             <div class="card col-12" id="pp-areas">
                 <div class="card-header">
-                    <h3 class="card-title">Areas</h3>
+                    <h3 class="card-title">Guess heatmap</h3>
                 </div>
                 <div class="card-body">
                     <div id="pp-areas-map">
@@ -180,6 +236,7 @@
     const userUid = "{{uid}}";
     const userData = {{public_user_data | tojson}};
 </script>
+<script src="/static/js/countries.js"></script>
 <script src="/static/js/proxy.js"></script>
 <script src="/static/js/tabs.js"></script>
 <script src="/static/js/stats.js"></script>

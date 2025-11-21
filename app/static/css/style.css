@@ -343,3 +343,26 @@ body {
   height: 200px;
   margin: 1em;
 }
+
+.country-table {
+  width: 100%;
+}
+.small-flag {
+  height: 1EM;
+  object-fit: cover;
+  aspect-ratio: 1;
+  clip-path: circle();
+}
+.country-table-wrapper {
+  height: 410px;
+  overflow-y: scroll;
+}
+.country-table thead {
+  position: sticky;
+  top: 0;
+  background: #111;
+  z-index: 1;
+}
+.table-row td{
+    border-bottom:1px solid #444;
+}

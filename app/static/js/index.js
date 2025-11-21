@@ -1,9 +1,8 @@
 const suggestionTemplate = document.querySelector("#suggestion-template");
 $("#search-input").keyup(async function(ev){
     if(!$(this).val()) return;
-    console.log(ev.key);
     const suggestions = (await findUsersByNickname($(this).val())).response;
-    if(ev.key=="Enter" && suggestions[0]&&suggestions[0].nickname==$(this).val()){
+    if(ev.key=="Enter" && suggestions[0]&&suggestions[0].nickname.toLowerCase()==$(this).val().toLowerCase()){
         location.href=`/stats/${suggestions[0].uid}`;
     }
     const parentContainer = $("#search-suggestions");
