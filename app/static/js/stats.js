@@ -1,3 +1,8 @@
+function getTileLayer(){
+    return L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom:19,
+});
+}
 const TIER_TEXTS = ["Bronze Bird", "Silver Swan", "Gold Goose", "Platin Penguin", "Diamond Duck", "Master Mallard"];
 const USER_DATA_CACHE = {};
 const PLAYER_CACHE = {};
@@ -8,12 +13,19 @@ const HEATMAP_OPTS = {
 };
 const gameTemplate = document.querySelector("#game-template");
 const playerTemplate = document.querySelector("#player-template");
+const guessTemplate = document.querySelector("#guess-template");
 const map  = L.map('pp-areas-map').setView([0,0],1);
-const tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://osm.org/copyright">OpenStreetMap</a> contributors',
-}).addTo(map);
+const tileLayer = getTileLayer().addTo(map);
 var densityLayer;
 var stats;
+var maps=[];
+const gtIcon = L.Icon.extend({
+    options: {
+        iconSize:     [28, 40],
+        iconAnchor:   [14, 40],
+    }
+});
+const targetIcon = new gtIcon({iconUrl:"https://static.geo.edutastic.de/app_assets/target-marker.png"});
 USER_DATA_CACHE[userUid] = userData;
 function distance(lat1, lon1, lat2, lon2) {
     const r = 6371; // global avg
@@ -61,13 +73,32 @@ class Result {
         this.distance = distance(this.drop.lat, this.drop.lng, this.pick.lat, this.pick.lng);
         this.time = resultJson.time;
     }
+    get html(){
+        const node = guessTemplate.content.cloneNode(true);
+        $(node).find(".guess-score").text(this.score);
+        $(node).find(".guess-time").text(`${this.time}s`);
+        $(node).find(".guess-distance").text(`${this.distance.toFixed(2)} km`);
+        $(node).find(".guess-open").attr('href', `https://www.google.com/maps/@?api=1&map_action=pano&pano=${this.drop.panoId}`);
+        return node;
+    }
+    addMap(node){
+        const guessMap = L.map($(node).find(".guess-map")[0]);
+        guessMap.invalidateSize();
+        getTileLayer().addTo(guessMap);
+        const guessMarker = L.marker([this.pick.lat, this.pick.lng]).addTo(guessMap);
+        const dropMarker = L.marker([this.drop.lat, this.drop.lng], {icon:targetIcon}).addTo(guessMap);
+        const guessLine = L.polyline([[this.pick.lat, this.pick.lng], [this.drop.lat, this.drop.lng]]).addTo(guessMap);
+        guessMap.fitBounds(new L.featureGroup([guessMarker, dropMarker]).getBounds());
+        maps.push(guessMap);
+    }
+
 };
 
 class Player{
     constructor(uid, id, nick){
         this.uid = uid;
         this.id = id;
-        this.nick = nick;
+        this.nick = nick || "???";
         this._userData = null;
         this._ppGames = null;
     }
@@ -75,7 +106,8 @@ class Player{
             return this._userData || (this._userData = USER_DATA_CACHE[this.uid]);
         }
     elo(mmid){
-            return this.userData.seasonProgress.elo.filter(a => a.matchmakingId === mmid)[0].elo
+
+            return !!this.userData?this.userData.seasonProgress.elo.filter(a => a.matchmakingId === mmid)[0].elo:0;
         }
     get ppGames(){
         return this._ppGames|| (this._ppGames=stats.ppGames.filter(g=>g.opponents[0].player==this));
@@ -88,7 +120,7 @@ class Player{
          const node = playerTemplate.content.cloneNode(true);
          $(node).find(".player-nick").text(this.nick);
          $(node).find(".player-nick").attr("href", `https://geotastic.net/user-page/${this.uid}`);
-        $(node).find(".player-avatar").attr("src", getAvatarUrl(this.userData.avatarImage));
+        $(node).find(".player-avatar").attr("src", getAvatarUrl(this.userData?.avatarImage));
         $(node).find(".player-rank").html(Rank.fromElo(this.elo(16)).html);
         $(node).find(".player-winrate").text(`${(this.ppWinRate*100).toFixed(2)}%`);
         $(node).find(".player-games-played").text(this.ppGames.length);
@@ -112,6 +144,7 @@ class Game {
             this.results = {};
             this.totalScore = 0;
             this.roundsGuessed = 0;
+            this.totalTime = 0;
             this.won = won;
             this.hgram = {};
             this.guessLocations = [];
@@ -125,6 +158,7 @@ class Game {
                 return;
             }
             this.totalScore += result.score;
+            this.totalTime += result.time;
             const bucket = Math.min(23, Math.floor(result.score/250)); // we don't want 6000-ers to be in a separate bucket
             this.hgram[bucket] = (this.hgram[bucket]||0)+1;
             this.guessLocations.push([result.pick.lat, result.pick.lng]);
@@ -135,6 +169,9 @@ class Game {
         }
         get averageScore(){
             return this.totalScore/this.roundsGuessed;
+        }
+        get averageTime(){
+            return this.totalTime/this.roundsGuessed;
         }
         elo(mmid){
             return this.player.elo(mmid);
@@ -165,7 +202,7 @@ class Game {
         $(node).find(".game-opponent-rank").html(Rank.fromElo(this.opponents[0].elo(this.matchmakingId)).html);
         $(node).find(".game-score").text(this.players[userUid].averageScore.toFixed(2));
         $(node).find(".game-view").attr("href", `https://geotastic.net/game-history-details/${this.lobbyId}`);
-        $(node).find(".game-opponent-avatar").attr("src", getAvatarUrl(this.opponents[0].userData.avatarImage));
+        $(node).find(".game-opponent-avatar").attr("src", getAvatarUrl(this.opponents[0].userData?.avatarImage));
         return node;
     }
     static async fromLobbyId(lobbyId) {
@@ -185,7 +222,10 @@ class Stats {
         this.flagsRank = Rank.fromElo(this.flagsElo);
     }
     bestGames(mmid){
-        return (mmid==15?this.flagsGames:this.ppGames).sort((a,b)=>(b.players[userUid].averageScore-a.players[userUid].averageScore));    
+        function score(g){
+            return g.players[userUid].averageScore*10000+g.players[userUid].averageTime;
+        }
+        return (mmid==15?this.flagsGames:this.ppGames).sort((a,b)=>(score(b)-score(a)));    
     }
     bestWins(mmid){
         return (mmid==15?this.flagsGames:this.ppGames).filter(g=>(g.players[userUid].won)).sort((a,b)=>(b.opponents[0].elo(mmid)-a.opponents[0].elo(mmid)));
@@ -210,6 +250,13 @@ class Stats {
         return Object.values(PLAYER_CACHE).
             filter(p=>!!p.games(mmid).length). // has any games played
             sort((a,b)=>score(a,this)-score(b,this));
+    }
+    bestGuesses(mmid){
+        function score(g){
+            return g.score*100000000000000-g.distance*(10000*(mmid!=15))-g.time;
+        }
+        const games = (mmid==15?this.flagsGames:this.ppGames);
+        return games.map(g=>Object.values(g.players[userUid].results)).flat().filter(r=>!!r.pick.iso2).sort((a,b)=>(score(b)-score(a)));
     }
     mostPlayedOpponents(mmid){
         return Object.values(PLAYER_CACHE).filter(p=>!!p.games(mmid).length).sort((a,b)=>b.games(mmid).length-a.games(mmid).length);
@@ -272,7 +319,21 @@ class Stats {
         for(const p of this.mostPlayedOpponents(16).slice(0,3)){
             $("#pp-opponents-most-played").append(p.html(16));
         }
+        const bestPpGuesses = this.bestGuesses(16);
+        for (const g of bestPpGuesses.slice(0,3)){
+            let node = g.html;
+            $("#pp-guesses-best").append(node);
+            g.addMap($("#pp-guesses-best .guess").last());
+            //setTimeout(()=>{g.addMap(node)}, 10);
+        }
+        for (const g of bestPpGuesses.slice(bestPpGuesses.length-3).reverse()){
+            let node = g.html;
+            console.log(node);
+            $("#pp-guesses-worst").append(node);
 
+            g.addMap($("#pp-guesses-worst .guess").last());
+            //setTimeout(()=>{g.addMap(node)}, 10);
+        }
         Plotly.newPlot('pp-dist-histogram', [{x:[...Array(24).keys().map(k=>k*250)], y:this.ppHistogram, type:"bar"}]);
         densityLayer=L.heatLayer(this.guessLocations, HEATMAP_OPTS).addTo(map);
 

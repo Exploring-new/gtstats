@@ -27,6 +27,17 @@
         </div>
     </div>
 </template>
+<template id="guess-template">
+    <div class="guess">
+        <div class="column">
+            <div class="row"><strong class="guess-score"></strong> <span class="guess-time"></span>
+                <span class="guess-distance"></span>
+                <a class="guess-open" target="_blank"><span class="iconify" data-icon="mdi-open-in-new"></span></a> 
+            </div>
+            <div class="guess-map"></div>
+        </div>    
+    </div>
+</template>
 <div class="stats-title"><img src="{{"https://static.geo.edutastic.de/avatars/"+public_user_data["avatarImage"] if public_user_data["avatarImage"] else "https://static.geo.edutastic.de/avatar/default.png"}}" class="avatar-image">
     <h1 class="title">{{public_user_data["nickname"]}}</h1>
 </div>
@@ -37,7 +48,7 @@
     </div>
     <div class="tab active" id="tab-pp" data-tab="tab-pp">
         <div id="pp-grid" class="grid">
-            <div class="card col-4" id="pp-overview">
+            <div class="card col-5" id="pp-overview">
                 <div class="card-header">
                     <h3 class="card-title">Overview</h3>
                 </div>
@@ -62,7 +73,7 @@
 
                 </div>
             </div>
-            <div class="card col-8" id="pp-opponents">
+            <div class="card col-7" id="pp-opponents">
                 <div class="card-header">
                     <h3 class="card-title">Opponents</h3>
                 </div>
@@ -81,37 +92,45 @@
                     </div>
                 </div>
             </div>
-            <div class="card col-8" id="pp-games">
+            <div class="card col-5" id="pp-games">
                 <div class="card-header">
                     <h3 class="card-title">Games</h3>
                 </div>
 
                 <div class="card-body">
-                    <div class="stat">
+                    <div class="stat column">
                         <span class="stat-name">Best games (score)</span>
-                        <div class="stat-value-multi" id="pp-games-best-games"></div>
+                        <div class="stat-value-multi column" id="pp-games-best-games"></div>
                     </div>
-                    <div class="stat">
+                    <div class="stat column">
                         <span class="stat-name">Worst games (score)</span>
-                        <div class="stat-value-multi" id="pp-games-worst-games"></div>
+                        <div class="stat-value-multi column" id="pp-games-worst-games"></div>
                     </div>
-                    <div class="stat">
+                    <div class="stat column">
                         <span class="stat-name">Best wins (opponent elo)</span>
-                        <div class="stat-value-multi" id="pp-games-best-wins"></div>
+                        <div class="stat-value-multi column" id="pp-games-best-wins"></div>
                     </div>
-                    <div class="stat">
+                    <div class="stat column">
                         <span class="stat-name">Worst losses (opponent elo)</span>
-                        <div class="stat-value-multi" id="pp-games-worst-losses"></div>
+                        <div class="stat-value-multi column" id="pp-games-worst-losses"></div>
                     </div>
                 </div>
             </div>
 
-            <div class="card col-4" id="pp-guesses">
+            <div class="card col-7" id="pp-guesses">
                 <div class="card-header">
                     <h3 class="card-title">Guesses</h3>
                 </div>
                 <div class="card-body">
-                    best guesses, worst guesses
+                    <div class="stat column">
+                        <span class="stat-name">Best guesses</span>
+                        <div class="stat-value-multi row wrap" id="pp-guesses-best"></div>
+                    </div>
+                    <div class="stat column">
+                        <span class="stat-name">Worst guesses</span>
+                        <div class="stat-value-multi row wrap" id="pp-guesses-worst"></div>
+                    </div>
+
                 </div>
             </div>
 

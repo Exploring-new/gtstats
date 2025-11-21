@@ -37,7 +37,7 @@ def gt_proxy(url, retries=0):
             )
         )
     except gt_api.errors.GeotasticAPIError as e:
-        if "invalid token" in str(e):
+        if "invalid token" in str(e).lower():
             client = gt_api.Client.login(credentials['username'], credentials['password'])
             return gt_proxy(url)
         return {"status": "error", "message": str(e), "response": None}
@@ -51,7 +51,7 @@ def stats(uid):
     try:
         user_data = client.get_public_user_info(uid)
     except gt_api.errors.GeotasticAPIError as e:
-        if "invalid token" in str(e):
+        if "invalid token" in str(e).lower():
             client = gt_api.Client.login(credentials['username'], credentials['password'])
             return stats(uid)
         return abort(400)
