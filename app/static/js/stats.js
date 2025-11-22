@@ -476,6 +476,7 @@ function *deduplicateLobbies(games){
     }
 }
 $("#stats").tabs();
+$("#pp-countries > .tabs").tabs();
 $("#loading-data").hide();
 getAllMatchmakingGames(userUid).then(async (g) => {
     $("#loading-data").show();

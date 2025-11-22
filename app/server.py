@@ -4,7 +4,7 @@ import json
 import requests
 import base64
 import threading
-
+import time
 with open("credentials.json","r") as f:
     credentials = json.load(f)
 
@@ -13,6 +13,7 @@ app = Flask(__name__, static_folder="static")
 
 client_lock = threading.Lock()
 client = None
+last_update = 0
 
 def get_client(force_refresh=False):
     """
@@ -22,9 +23,10 @@ def get_client(force_refresh=False):
     global client
 
     with client_lock:
-        if client is None or force_refresh:
+        if client is None or (force_refresh and last_update<time.time()-10):
             try:
                 client = gt_api.Client.login(credentials['username'], credentials['password'])
+                last_update = time.time()
             except Exception as e:
                 raise RuntimeError(f"Login failed: {e}")
 
@@ -39,9 +41,9 @@ def safe_api_call(func, *args, **kwargs):
 
     except gt_api.errors.GeotasticAPIError as e:
         if "invalid token" in str(e).lower():
-            refreshed = get_client(force_refresh=True)
+            client = get_client(force_refresh=True)
             return func(*args, **kwargs)
-
+        
         raise
 
 
@@ -106,5 +108,5 @@ def stats(uid):
     return render_template("stats.html", uid=uid, public_user_data=user_data)
 
 
-app.run(port=5000, debug=True)
+if __name__=="__main__":app.run(port=5000)
 
